@@ -182,10 +182,13 @@ int ottercat_main(INTF_Type intf_val, const char* socket, char* cmdstr) {
     /// Start the devmgr childprocess, if one is specified.
     /// If it works, the devmgr command should be added using the name of the
     /// program used for devmgr.
-    DEBUG_PRINTF("Initializing socket (%s) ...\n", socket);
-    if (sp_open(&sockpush_handle, socket, 0) == 0) {
+    DEBUG_PRINTF("Opening client socket (%s) ...\n", socket);
+    if (sp_open(&sockpush_handle, socket, 0) == 0) {    
         use_socket      = true;
         devmgr_handle   = sockpush_handle;
+        
+        // This is a hack to let the socket thread finish connection
+        usleep(5000);
     }
     else {
         fprintf(stderr, "Err: socket could not be opened.\n");
@@ -194,6 +197,8 @@ int ottercat_main(INTF_Type intf_val, const char* socket, char* cmdstr) {
         devmgr_handle = NULL;
         goto ottercat_main_TERM;
     }
+    
+    
     
     DEBUG_PRINTF("--> done\n");
    
@@ -218,12 +223,10 @@ int ottercat_main(INTF_Type intf_val, const char* socket, char* cmdstr) {
         case -2: ERR_PRINTF("command cannot be opened. (-2)\n");
                  goto cmdstream_ERR;
         case -3: ERR_PRINTF("command cannot be read. (-3)\n");
-                 goto cmdstream_ERR;
-        case -4: ERR_PRINTF("command returned error. (-4)\n");
-                 goto cmdstream_ERR;
+        case -4:
         default:
         cmdstream_ERR:
-            fprintf(stderr, ERRMARK"Error (%i) running command %s.\n", cmdrc, cmdstr);
+            fprintf(stderr, ERRMARK"Error running command: %s.\n", cmdstr);
             break;
     }
 
@@ -244,7 +247,6 @@ int ottercat_main(INTF_Type intf_val, const char* socket, char* cmdstr) {
     fflush(stdout);
     fflush(stderr);
     
-    VERBOSE_PRINTF("exiting (%i)\n", cli.exitcode);
     return cli.exitcode;
 }
 
@@ -266,16 +268,18 @@ int main(int argc, char* argv[]) {
     struct arg_int  *timeout = arg_int0("t","timeout","int",            "Integer number of milliseconds for response timeout: default 500ms");
     struct arg_int  *retries = arg_int0("r","retries","int",            "Integer number of request retries: default 0");
   //struct arg_str  *fmt     = arg_str0("f", "fmt", "format",           "\"default\", \"json\", \"jsonhex\", \"bintex\", \"hex\"");
-    struct arg_file *socket  = arg_file1(NULL,NULL,"path/addr",         "Socket path/address of otter daemon");
-    struct arg_str  *cmdstr  = arg_strn(NULL,NULL,"cmd",0,240,          "Command string to send to otter daemon");
+    struct arg_file *socket  = arg_file1(NULL,NULL,"path/addr",         "Socket path/address of daemon");
+  //struct arg_str  *cmdstr  = arg_strn(NULL,NULL,"cmd",0,240,          "Command string to send to otter daemon");
     struct arg_end  *end     = arg_end(20);
     
-    void* argtable[] = { help, version, verbose, debug, /*fmt,*/ socket, cmdstr, end };
-    const char* progname = OTTERCAT_PARAM(NAME);
+    void* argtable[] = { help, version, verbose, debug, /*fmt,*/ socket, /*cmdstr,*/ end };
+    const char* progname = OTTERCAT_PARAM_NAME;
     int nerrors;
     bool bailout        = true;
     int exitcode        = 0;
-
+    
+    int formal_argc     = 0;
+    
     bool verbose_val    = false;
     bool debug_val      = false;
     int timeout_val     = 500;
@@ -284,8 +288,39 @@ int main(int argc, char* argv[]) {
     INTF_Type intf_val  = INTF_socket;
     char* socket_val    = NULL;
     char* cmdstr_val    = NULL;
-    size_t cmdstr_size;
+    size_t cmdstr_size  = 0;
 
+    
+    /// Agglomerate the command input arguments, which are at the end of the
+    /// argv section after the un-paired "--"
+    for (int i=0; i<argc; i++) {
+        if (strcmp(argv[i], "--") == 0) {
+            formal_argc = argc;
+            argc = i;
+            break;
+        }
+    }
+    
+    if (formal_argc > argc) {
+        char* cursor;
+        
+        for (int i=(argc+1); i<formal_argc; i++) {
+            cmdstr_size += strlen(argv[i]) + 1;
+        }
+
+        if (cmdstr_size > 0) {
+            cmdstr_val = malloc(cmdstr_size);
+            if (cmdstr_val == NULL) {
+                goto main_FINISH;
+            }
+            
+            cursor = cmdstr_val;
+            for (int i=(argc+1); i<formal_argc; i++) {
+                cursor      = stpcpy(cursor, argv[i]);
+                *cursor++   = ' ';
+            }
+        }
+    }
     
     /// Initialize allocators in argtable lib to defaults
     arg_set_allocators(NULL, NULL);
@@ -303,8 +338,9 @@ int main(int argc, char* argv[]) {
     /// special case: '--help' takes precedence over error reporting
     if (help->count > 0) {
         printf("Usage: %s", progname);
-        arg_print_syntax(stdout, argtable, "\n");
+        arg_print_syntax(stdout, argtable, " [-- inline cmd]\n");
         arg_print_glossary(stdout, argtable, "  %-25s %s\n");
+        fprintf(stdout, "  %-25s Command string to cat onto daemon socket.\n", "inline cmd");
         exitcode = 0;
         goto main_FINISH;
     }
@@ -350,26 +386,7 @@ int main(int argc, char* argv[]) {
     
     /// Input command string may be taken from command line or fed by stdin.
     /// If no command string is present, then use pipe stdin.
-    if (cmdstr->count > 0) {
-        char* cursor;
-        cmdstr_size = 0;
-        
-        for (int i=0; i<cmdstr->count; i++) {
-            cmdstr_size += strlen(cmdstr->sval[i]) + 1;
-        }
-        
-        cmdstr_val = malloc(cmdstr_size);
-        if (cmdstr_val == NULL) {
-            goto main_FINISH;
-        }
-        
-        cursor = cmdstr_val;
-        for (int i=0; i<cmdstr->count; i++) {
-            cursor      = stpcpy(cursor, cmdstr->sval[i]);
-            *cursor++   = ' ';
-        }
-    }
-    else {
+    if (cmdstr_size == 0) {
         ///@todo 1024 should be configurable
         cmdstr_val = malloc(1024);
         if (cmdstr_val == NULL) {
@@ -378,10 +395,10 @@ int main(int argc, char* argv[]) {
         if (sub_readline(&cmdstr_size, STDIN_FILENO, cmdstr_val, 1024) <= 0) {
             goto main_FINISH;
         }
-    }
-    if (cmdstr_size == 0) {
-        goto main_FINISH;
-    }
+        if (cmdstr_size == 0) {
+            goto main_FINISH;
+        }
+    }    
 
     /// Set cliopt struct with derived variables
     cliopt_init(&cliopts);

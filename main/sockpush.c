@@ -570,7 +570,7 @@ void* sp_iothread(void* args) {
     sp->read_buf            = linebuf;
     sp->read_size           = 0;
     sp->read_id             = 1;
-    
+
     while (1) {
         /// Connect to the socket
         if (connect(sp->fd_sock, (struct sockaddr *)&sp->addr, sizeof(struct sockaddr_un)) < 0) {
@@ -581,8 +581,10 @@ void* sp_iothread(void* args) {
             continue;
         }
         
+        ///@todo have a wait function that can be released here
+
         backoff = 1;
-        
+
         while (1) {
             // ----------------------------------------------------------------
             /// Double-Buffer stream

@@ -230,6 +230,7 @@ static int sub_devmgr_socket(dterm_handle_t* dth, uint8_t* dst, int* inbytes, ui
     DEBUG_PRINTF("Sending %i bytes to sp_sendcmd():\n%.*s\n", *inbytes, *inbytes, src);
     rc = sp_sendcmd(sp_handle, src, (size_t)*inbytes);
     if (rc < 0) {
+fprintf(stderr, "sp_sendcmd() returned %i\n", rc);
         rc = -6;
         goto sub_devmgr_socket_TERM;
     }
@@ -245,7 +246,11 @@ static int sub_devmgr_socket(dterm_handle_t* dth, uint8_t* dst, int* inbytes, ui
             rc = -4; //-4 == retry
         }
         else {
-            DEBUG_PRINTF("Read %i bytes from sp_read():\n%.*s\n", rc, rc, dout);
+            if (cliopt_isverbose()) {
+                dprintf(dth->fd.out, _E_GRN"[%u]>> "_E_NRM, rc);
+            }
+            dprintf(dth->fd.out, "%.*s\n", rc, dout);
+            
             rc = -1;
             qualtest = 0;
             resp = cJSON_Parse((const char*)dout);

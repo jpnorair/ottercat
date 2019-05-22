@@ -255,7 +255,7 @@ static int sub_proc_lineinput(dterm_handle_t* dth, int* cmdrc, char* loadbuf, in
         }
         
         DEBUG_PRINTF("raw output (%i bytes) %.*s\n", bytesout, bytesout, protocol_buf);
-        write(dth->fd.out, (char*)protocol_buf, bytesout);
+        //write(dth->fd.out, (char*)protocol_buf, bytesout);
     }
     
     sub_proc_lineinput_FREE:
@@ -297,12 +297,12 @@ int dterm_cmdstream(dterm_handle_t* dth, char* stream) {
 
         // Create temporary context as a memory pool
         poolsize    = cliopt_getpoolsize();
-        est_poolobj = 4; //(poolsize / 128) + 1;
+        est_poolobj = 4;
         dth->tctx   = talloc_pooled_object(NULL, void, est_poolobj, poolsize);
         
         // Echo input line to dterm
         if (cliopt_isverbose()) {
-            dprintf(dth->fd.out, _E_MAG"<< "_E_NRM"%s\n", streamcursor);
+            dprintf(dth->fd.out, _E_MAG"[%u]<< "_E_NRM"%s\n", stream_sz, streamcursor);
         }
         
         // Process the line-input command
@@ -314,7 +314,8 @@ int dterm_cmdstream(dterm_handle_t* dth, char* stream) {
         
         // Exit the command sequence on first detection of error.
         if (cmdrc < 0) {
-            dprintf(dth->fd.out, _E_RED"ERR: "_E_NRM"Command Returned %i: stopping.\n\n", cmdrc);
+            dprintf(dth->fd.out, _E_RED"ERR: "_E_NRM"Command Returned %i\n", cmdrc);
+            rc = -4;
             break;
         }
         
