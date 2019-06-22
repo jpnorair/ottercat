@@ -1,4 +1,5 @@
-CC=gcc
+CC := gcc
+LD := ld
 
 SUBAPP      := main
 OTTERCAT_PKG   ?=
@@ -8,12 +9,12 @@ OTTERCAT_LIB   ?=
 
 ifneq ($(EXT_DEBUG),0)
 	ifeq ($(EXT_DEBUG),1)
-		CFLAGS  := -std=gnu99 -Og -g -Wall -pthread -D__DEBUG__
+		CFLAGS  ?= -std=gnu99 -Og -g -Wall -pthread -D__DEBUG__
 	else
-		CFLAGS  := -std=gnu99 -O2 -Wall -pthread -D__DEBUG__
+		CFLAGS  ?= -std=gnu99 -O2 -Wall -pthread -D__DEBUG__
 	endif
 else 
-	CFLAGS      := -std=gnu99 -O3 -pthread
+	CFLAGS      ?= -std=gnu99 -O3 -pthread
 endif
 
 BUILDDIR    := ../$(OTTERCAT_BLD)
